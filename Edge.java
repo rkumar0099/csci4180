@@ -43,11 +43,15 @@ public class Edge implements Writable {
         return this.cost.get();
     }
 
+    @Override
+
     public void write(DataOutput output) throws IOException {
         this.vertex.write(output);
         this.cost.write(output);
     }
 
+    @Override
+    
     public void readFields(DataInput input) throws IOException {
         this.vertex = new IntWritable(0);
         this.cost = new IntWritable(0);

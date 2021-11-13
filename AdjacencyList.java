@@ -52,6 +52,8 @@ public class AdjacencyList implements Writable {
 
     }
 
+    @Override
+
     public void write(DataOutput output) {
       this.size.write(output);
       for (Edge e: this.data) {
@@ -59,6 +61,8 @@ public class AdjacencyList implements Writable {
       }
     }
 
+    @Override
+    
     public void readFields(DataInput input) {
       this.size = new IntWritable(0);
       this.size.readFields(input);
