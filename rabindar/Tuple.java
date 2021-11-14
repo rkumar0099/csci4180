@@ -52,6 +52,14 @@ public class Tuple implements Writable {
         this.vertex = new IntWritable(v);
     }
 
+    public void setCost(IntWritable c) {
+        this.cost = c;
+    }
+
+    public void setIntCost(int c) {
+        this.cost = new IntWritable(c);
+    }
+
     @Override
     public void write(DataOutput output) throws IOException {
         this.vertex.write(output);
@@ -69,7 +77,7 @@ public class Tuple implements Writable {
 
     @Override
     public String toString() {
-        return "(" + this.getIntVertex() + " " + this.getIntCost() + ")";
+        return  this.getIntVertex() + " " + this.getIntCost();
     }
 
 }

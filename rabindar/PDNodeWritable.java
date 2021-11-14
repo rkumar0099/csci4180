@@ -39,7 +39,7 @@ public class PDNodeWritable implements Writable {
      this.prevId = new IntWritable(-1);
      this.distance = new IntWritable(distance);
      this.visited = new BooleanWritable(visited);
-     this.AdjacencyList = edges;
+     this.edges = edges;
     }
 
      public void set(PDNodeWritable node) {

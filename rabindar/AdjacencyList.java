@@ -13,16 +13,16 @@ import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 
 public class AdjacencyList implements Writable {
-    private List<Tuple> data; //list to store Tuple for a given vertex v
+    private List<IntWritable> data; //list to store Tuple for a given vertex v
     private IntWritable size;
 
     public AdjacencyList() {
-      this.data = new ArrayList<Tuple>();
+      this.data = new ArrayList<IntWritable>();
       this.size = new IntWritable(0);
     }
 
     public AdjacencyList(int cap) {
-      this.data = new ArrayList<Tuple>(cap);
+      this.data = new ArrayList<IntWritable>(cap);
       this.size = new IntWritable(0);
     }
     
@@ -34,13 +34,24 @@ public class AdjacencyList implements Writable {
     	return this.size;
     }
 
-    public Tuple getTuple(int index) {
+    public IntWritable getValue(int index) {
       return this.data.get(index);
     }
 
-    public void add(Tuple e) {
-      this.data.add(e);
-      this.size.set(this.size.get() + 1);
+    public int getIntValue(int index) {
+      return this.data.get(index).get();
+    }
+
+    public void add(int val, int dist) {
+      this.data.add(new IntWritable(val));
+      this.data.add(new IntWritable(dist));
+      this.size.set(this.size.get() + 2);
+    }
+
+    public void add(IntWritable val, IntWritable dist) {
+      this.data.add(val);
+      this.data.add(dist);
+      this.size.set(this.size.get() + 2);
     }
 
     public void merge(AdjacencyList list) {
@@ -48,7 +59,7 @@ public class AdjacencyList implements Writable {
       this.size.set(this.size.get() + listSize);
 
       for (int i = 0; i < listSize; i++) {
-        this.data.add(list.getTuple(i));
+        this.data.add(list.getValue(i));
       }
 
     }
@@ -56,8 +67,8 @@ public class AdjacencyList implements Writable {
     @Override
     public void write(DataOutput output) throws IOException {
       this.size.write(output);
-      for (Tuple e: this.data) {
-        e.write(output);
+      for (int i = 0; i < this.size.get(); i++) {
+        this.data.get(i).write(output);
       }
     }
 
@@ -66,24 +77,20 @@ public class AdjacencyList implements Writable {
       this.size = new IntWritable(0);
       this.size.readFields(input);
 
-      this.data = new ArrayList<Tuple>();
-      for (int i = 0; i < this.size.get(); i++) {
-        Tuple e = new Tuple();
-        e.readFields(input);
-        this.data.add(e);
+      this.data = new ArrayList<IntWritable>();
+      for (int i = 0; i < this.size.get(); i += 2) {
+        IntWritable val = new IntWritable();
+        IntWritable dist = new IntWritable();
+        val.readFields(input);
+        dist.readFields(input);
+        this.data.add(val);
+        this.data.add(dist);
       }
     }
 
     @Override
     public String toString() {
         String s = "";
-        int i = 0;
-        for (; i < this.getIntSize() - 1; i++) {
-            Tuple e = this.data.get(i);
-            s += e.toString() + ", ";
-        }
-            Tuple e = this.data.get(i);
-            s += e.toString();
-            return s;
-        }
+        return s;
+  }
 }

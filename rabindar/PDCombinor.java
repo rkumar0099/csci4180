@@ -20,13 +20,13 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 
 
-public class FinalReduce extends Reducer<IntWritable, MapOutput, IntWritable, Tuple> {
+public class PDCombinor extends Reducer<IntWritable, MapOutput, IntWritable, MapOutput> {
     IntWritable unreachable = new IntWritable(-1);
     IntWritable distance = new IntWritable();
     PDNodeWritable node = new PDNodeWritable();
     Tuple e = new Tuple();
 		  
-	public void reduce(IntWritable nodeId, Iterable <MapOutput> mapOutputs, Context context)
+	public void reduce(IntWritable nodeId, Iterable<MapOutput> mapOutputs, Context context)
         throws IOException, InterruptedException {
             
             int source = Integer.valueOf(context.getConfiguration().get("source"));
@@ -40,7 +40,7 @@ public class FinalReduce extends Reducer<IntWritable, MapOutput, IntWritable, Tu
                 Writable value = mapOutput.next().get();
 
                     if(value instanceof PDNodeWritable) { //if you receive a node
-                        if(node == null){
+                        if(node == null) {
                             node = new PDNodeWritable();
                             node.set((PDNodeWritable)value);
                         }
@@ -74,16 +74,15 @@ public class FinalReduce extends Reducer<IntWritable, MapOutput, IntWritable, Tu
                 }
                 
                 if(node != null){
-                    node.setDistance(minimumDistance);
-                    node.setPath(minimumPath);
+                    node.setDistance(minDist);
+                    node.setPath(minPath);
                   //  System.out.println("Node:" + node);
                     context.write(nodeId, new MapOutput(node));
                    }
                    else{
-          
                     e.setVertex(new IntWritable(minPath));
                     e.setCost(new IntWritable(minDist));
-                    context.write(nodeId, e);
+                    context.write(nodeId, new MapOutput(e));
             }
         }
 }

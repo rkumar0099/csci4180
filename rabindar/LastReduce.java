@@ -20,7 +20,7 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 
 
-public class FinalReduce extends Reducer<IntWritable, MapOutput, IntWritable, Tuple> {
+public class LastReduce extends Reducer<IntWritable, MapOutput, IntWritable, Tuple> {
     IntWritable unreachable = new IntWritable(-1);
     IntWritable distance = new IntWritable();
     PDNodeWritable node = new PDNodeWritable();
@@ -79,7 +79,7 @@ public class FinalReduce extends Reducer<IntWritable, MapOutput, IntWritable, Tu
                     if (nodeId.get() == source) {
                         e.setVertex(new IntWritable(-1));
                     }
-                    context.Write(nodeId, e);
+                    context.write(nodeId, e);
             }
 
         }
