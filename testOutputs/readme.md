@@ -1,0 +1,1 @@
+###The program in Main.java test the content of files f1 and f2, and check if the outputs of both files are same. In order to test your program output with another output, put your program output in f1 or f2, and the test output in the other one. Run program by command `bash run.sh`
