@@ -50,11 +50,14 @@ public class PDPostProcess {
     }
 
     public static class PostReducer
-            extends Reducer<IntWritable,MapWritable,IntWritable,Text> {            
+            extends Reducer<IntWritable,Text,IntWritable,Text> {            
             
-            public void reduce(IntWritable nodeID, Iterable<MapWritable> values, Context context
+            public void reduce(IntWritable nodeID, Iterable<Text> values, Context context
                     ) throws IOException, InterruptedException {
                 
+                for (Text val : values) {
+                    context.write(nodeID, val);
+                }
             }
     }
 

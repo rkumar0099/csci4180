@@ -1,0 +1,1 @@
+hadoop jar my.jar ParallelDijkstra /myratgeldi/a2/part1/input/ParallelDijkstraSmall /myratgeldi/a2/part1/output 1 0 weighted
