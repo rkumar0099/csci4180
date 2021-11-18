@@ -36,6 +36,7 @@ public class ParallelDijkstra {
                 throws IOException, InterruptedException {
                     int numEdges = edges.getIntSize();
                     int source = Integer.valueOf(context.getConfiguration().get("source"));
+                    String choice = context.getConfiguration().get("choice");
 
                     if (source == nodeId.get()) {
                         context.getCounter(ReachCounter.COUNT).increment(1);
@@ -44,7 +45,11 @@ public class ParallelDijkstra {
                         
                         for (int i = 0; i < numEdges; i += 2) {
                             e.setVertex(nodeId);
-                            e.setCost(edges.getValue(i+1));
+                            if (choice.equals("weighted")) {
+                                e.setCost(edges.getValue(i+1));
+                            } else {
+                                e.setIntCost(1);
+                            }
                             context.write(edges.getValue(i), new MapOutput(e));
                         }
 
@@ -75,20 +80,25 @@ public class ParallelDijkstra {
                 int numEdges = edges.getIntSize(); //get the size of the adjacency list
                 int source = Integer.valueOf(context.getConfiguration().get("source")); //get source node from command line arguments
                 int distance = node.getIntDistance(); 
-                
+                String choice = context.getConfiguration().get("choice");
+
                 if(distance != -1) {
                   if(!node.isVisited()) {
 
                     node.markVisited();
-                    context.getCounter(ReachCounter.COUNT).increment(1);
-                    //dcrease count
+                    context.getCounter(ReachCounter.COUNT).increment(1); //decrease the count
+                    
                   }
                   else {}             
                   context.write(nodeId, new MapOutput(node));
 
                   for (int i = 0; i < numEdges; i += 2) {
                     e.setVertex(nodeId);
-                    e.setIntCost(edges.getIntValue(i+1)+distance);
+                    if (choice.equals("weighted")) {
+                        e.setIntCost(edges.getIntValue(i+1)+distance);
+                    } else {
+                        e.setIntCost(edges.getIntValue(i+1) + 1);
+                    }
                     context.write(edges.getValue(i), new MapOutput(e));
                   }
             } else {
@@ -169,6 +179,7 @@ public static void main(String[] args) throws Exception {
 	//conf.set("fs.defaultFS", "file:///"); //Remove these comments to run on local mode
 	//conf.set("mapreduce.framework.name", "local");
     conf.set("source", args[2]);
+    conf.set("choice", args[4]);
     conf.set("mapreduce.output.textoutputformat.separator" , " ");
     FileSystem fs = FileSystem.get(conf);
     fs.delete(new Path(args[0],"temp"), true);
