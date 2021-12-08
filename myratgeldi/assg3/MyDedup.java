@@ -15,10 +15,12 @@ public class MyDedup {
     private static final String FILENAME = "mydedup.index";
     private static int containerOffset = 0;
     private static int chunkOffset = 0;
-    private static byte[] container = new byte[1024];
+    private static byte[] container = new byte[1048576];
     private static byte[] chunk;
     private static MessageDigest md;
     private static int containerCount = 0;
+    private static int totalNumBytesRead = 0;
+
 
     public static boolean checkPowerTwo(int n)
     {
@@ -39,16 +41,16 @@ public class MyDedup {
     }
 
 
-    public static void main(String args[]) {
-        int a = Integer.parseInt(args[0]);
-        int mask = getAnchorMask(a);
-        System.out.println("my num: " + a);
-        System.out.println("pow of two: " + checkPowerTwo(a));
-        System.out.println("mask: " + mask);
-    }
-
     public static void loadFingerprintIndex() {
         // don't forget to load container count
+    }
+
+    public static int power(int num, int pow) {
+        int result = 1;
+        for (int i = 0; i < pow; i++) {
+            result = (result * (num % avgChunkSize)) % avgChunkSize;
+        }
+        return result;
     }
 
     public static void processChunk() {
@@ -62,11 +64,13 @@ public class MyDedup {
             // check for container overflow
             if (containerOffset + chunkOffset > container.length) {
                 // upload current container
-                container = new byte[1024];
+                container = new byte[1048576];
                 containerOffset = 0;
                 containerCount++;
             }
             // move chunk into container
+            // System.out.println("container offset: " + containerOffset);
+            // System.out.println("chunk offset: " + chunkOffset);
             System.arraycopy(chunk, 0, container, containerOffset, chunkOffset);
             containerOffset += chunkOffset;
             // update fingerprint index
@@ -77,7 +81,7 @@ public class MyDedup {
         chunkOffset = 0;
     }
 
-    public static void main2(String args[]) throws NoSuchAlgorithmException {
+    public static void main(String args[]) throws NoSuchAlgorithmException {
         // int minChunkSize, avgChunkSize, maxChunkSize, d;
         String uploadFile, downloadFile, deleteFile, localFile;
         String command = args[0];
@@ -103,21 +107,23 @@ public class MyDedup {
                 while (!finishedChunking) {
                     if (newChunk) {
                         int numBytesRead = input.read(chunk, chunkOffset, minChunkSize);
-                        if (numBytesRead != -1) {chunkOffset += numBytesRead;}
+                        if (numBytesRead != -1) {chunkOffset += numBytesRead; totalNumBytesRead += numBytesRead;}
                         if (numBytesRead == -1 || numBytesRead < minChunkSize) {
                             // eof reached
                             finishedChunking = true;
                             processChunk();
-                            newChunk = true;
+                            System.out.println(totalNumBytesRead);
                         }
                         else {
                             // first time computing RFP for this chunk
-                            for (int i = chunkOffset - minChunkSize; i < chunkOffset; i++) {
-                                curRFP = (curRFP + (chunk[i] % avgChunkSize * (int) Math.pow(d, minChunkSize - i - 1) % avgChunkSize) % avgChunkSize) % avgChunkSize;
+                            curRFP = 0;
+                            for (int i = 0; i < minChunkSize; i++) {
+                                curRFP = (curRFP + (chunk[i] * power(d, minChunkSize - 1 - i)) % avgChunkSize) % avgChunkSize;
                             }
+                            
                             if ((curRFP & mask) == 0) {
                                 processChunk();
-                                newChunk = true;
+                                System.out.println(totalNumBytesRead);
                             }
                             else {
                                 newChunk = false;
@@ -128,6 +134,7 @@ public class MyDedup {
                     else {
                         if (chunkOffset + 1 > maxChunkSize) {
                             processChunk();
+                            System.out.println(totalNumBytesRead);
                             newChunk = true;
                         }
                         else {
@@ -136,16 +143,18 @@ public class MyDedup {
                                 // eof reached
                                 finishedChunking = true;
                                 processChunk();
-                                newChunk = true;
+                                System.out.println(totalNumBytesRead);
                             }
                             else {
                                 chunk[chunkOffset] = (byte)cur;
+                                curRFP = ((d * (curRFP - (power(d, minChunkSize - 1) * chunk[chunkOffset - minChunkSize]) % avgChunkSize) % avgChunkSize) % avgChunkSize + chunk[chunkOffset]) % avgChunkSize;
                                 chunkOffset++;
-                                curRFP = (d * (curRFP - (((int) Math.pow(d, minChunkSize - 1)) % avgChunkSize * chunk[chunkOffset - minChunkSize])
-                                % avgChunkSize) % avgChunkSize + chunk[chunkOffset - 1]) % avgChunkSize;
+                                totalNumBytesRead++;
+                                
                                 if ((curRFP & mask) == 0) {
                                     processChunk();
-                                    newChunk = true;
+                                    System.out.println(totalNumBytesRead);
+                                    newChunk = true;   
                                 }
                             }
                         }
