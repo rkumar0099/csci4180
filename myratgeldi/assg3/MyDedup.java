@@ -1,8 +1,12 @@
 import java.util.*;
 import java.lang.Math;
 import java.lang.System;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -12,7 +16,9 @@ public class MyDedup {
     private static int minChunkSize, avgChunkSize, maxChunkSize, d;
     private static String storage;
     private static HashMap<String, int[]> fingerprintIndex = new HashMap<String, int[]>();
-    private static final String FILENAME = "mydedup.index";
+    private static HashMap<String, String[]> fileRecipes = new HashMap<String, String[]>();
+    private static final String INDEX_FILE = "index.txt";
+    private static final String FILE_RECIPES = "recipe.txt";
     private static int containerOffset = 0;
     private static int chunkOffset = 0;
     private static byte[] container = new byte[1048576];
@@ -41,8 +47,77 @@ public class MyDedup {
     }
 
 
-    public static void loadFingerprintIndex() {
-        // don't forget to load container count
+    public static void readFingerprintIndex() {
+        File file = new File(INDEX_FILE);
+        BufferedReader bf = null;
+        try {
+            bf = new BufferedReader(new FileReader(file));
+
+            containerCount = Integer.parseInt(bf.readLine());
+            String line;
+            String hash;
+            int containNo, containOff, chunkSize, pointers;
+            while ((line = bf.readLine()) != null) {
+                String[] tokens = line.split(",");
+                hash = tokens[0];
+                containNo = Integer.parseInt(tokens[1]);
+                containOff = Integer.parseInt(tokens[2]);
+                chunkSize = Integer.parseInt(tokens[3]);
+                pointers = Integer.parseInt(tokens[4]);
+                int[] payload = {containNo, containOff, chunkSize, pointers};
+                fingerprintIndex.put(hash, payload);
+            }
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                bf.close();
+            }
+            catch (Exception e) {
+            }
+        }
+    }
+
+    public static void readFileRecipes() {
+
+    }
+
+    public static void writeFileRecipes() {
+
+    }
+
+    public static void writeFingerprintIndex() {
+        
+        File file = new File(INDEX_FILE);
+        BufferedWriter bf = null;
+        try {
+            bf = new BufferedWriter(new FileWriter(file));
+
+            bf.write(Integer.toString(containerCount));
+            
+            for (Map.Entry<String, int[]> entry : fingerprintIndex.entrySet()) {
+                bf.newLine();
+                bf.write(entry.getKey());
+                for (int i = 0; i < entry.getValue().length; i++) {
+                    bf.write("," + entry.getValue()[i]);
+                }
+                
+            }
+
+            bf.flush();
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                bf.close();
+            }
+            catch (Exception e) {
+            }
+        }
     }
 
     public static int power(int num, int pow) {
@@ -64,17 +139,22 @@ public class MyDedup {
             // check for container overflow
             if (containerOffset + chunkOffset > container.length) {
                 // upload current container
+                if (storage.equals("local")) {
+
+                }
+                else if (storage.equals("azure")) {
+
+                }
                 container = new byte[1048576];
                 containerOffset = 0;
                 containerCount++;
             }
             // move chunk into container
-            // System.out.println("container offset: " + containerOffset);
-            // System.out.println("chunk offset: " + chunkOffset);
             System.arraycopy(chunk, 0, container, containerOffset, chunkOffset);
-            containerOffset += chunkOffset;
             // update fingerprint index
-            int[] chunkInformation = {containerCount, containerOffset, chunkOffset};
+
+            int[] chunkInformation = {containerCount, containerOffset, chunkOffset, 1};
+            containerOffset += chunkOffset;
             fingerprintIndex.put(hash, chunkInformation);
         }
         chunk = new byte[maxChunkSize];
@@ -85,7 +165,12 @@ public class MyDedup {
         // int minChunkSize, avgChunkSize, maxChunkSize, d;
         String uploadFile, downloadFile, deleteFile, localFile;
         String command = args[0];
-        loadFingerprintIndex();
+        readFingerprintIndex();
+        // System.out.println("Number of containers: " + containerCount);
+        // for (Map.Entry<String, int[]> entry : fingerprintIndex.entrySet()) {
+        //     System.out.println(entry.getKey() + ": " + entry.getValue());
+        // }
+        // System.exit(1);
         md = MessageDigest.getInstance("SHA-256");
         if (command.equals("upload")) {
             minChunkSize = Integer.parseInt(args[1]);
@@ -177,5 +262,6 @@ public class MyDedup {
             deleteFile = args[1];
             storage = args[2];
         }
+        writeFingerprintIndex();
     }
 }
