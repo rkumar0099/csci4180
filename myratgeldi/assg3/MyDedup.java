@@ -5,6 +5,8 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -16,7 +18,7 @@ public class MyDedup {
     private static int minChunkSize, avgChunkSize, maxChunkSize, d;
     private static String storage;
     private static HashMap<String, int[]> fingerprintIndex = new HashMap<String, int[]>();
-    private static HashMap<String, String[]> fileRecipes = new HashMap<String, String[]>();
+    private static HashMap<String, ArrayList<String>> fileRecipes = new HashMap<String, ArrayList<String>>();
     private static final String INDEX_FILE = "index.txt";
     private static final String FILE_RECIPES = "recipe.txt";
     private static int containerOffset = 0;
@@ -26,6 +28,8 @@ public class MyDedup {
     private static MessageDigest md;
     private static int containerCount = 0;
     private static int totalNumBytesRead = 0;
+    private static ArrayList<String> chunkHashes = new ArrayList<String>();
+
 
 
     public static boolean checkPowerTwo(int n)
@@ -59,13 +63,15 @@ public class MyDedup {
             int containNo, containOff, chunkSize, pointers;
             while ((line = bf.readLine()) != null) {
                 String[] tokens = line.split(",");
-                hash = tokens[0];
-                containNo = Integer.parseInt(tokens[1]);
-                containOff = Integer.parseInt(tokens[2]);
-                chunkSize = Integer.parseInt(tokens[3]);
-                pointers = Integer.parseInt(tokens[4]);
-                int[] payload = {containNo, containOff, chunkSize, pointers};
-                fingerprintIndex.put(hash, payload);
+                if (tokens.length == 5) {
+                    hash = tokens[0];
+                    containNo = Integer.parseInt(tokens[1]);
+                    containOff = Integer.parseInt(tokens[2]);
+                    chunkSize = Integer.parseInt(tokens[3]);
+                    pointers = Integer.parseInt(tokens[4]);
+                    int[] payload = {containNo, containOff, chunkSize, pointers};
+                    fingerprintIndex.put(hash, payload);
+                }
             }
         }
         catch (IOException e) {
@@ -81,11 +87,65 @@ public class MyDedup {
     }
 
     public static void readFileRecipes() {
+        File file = new File(FILE_RECIPES);
+        BufferedReader bf = null;
+        try {
+            bf = new BufferedReader(new FileReader(file));
 
+            String line;
+            String[] hashes;
+            String pathname;
+            while ((line = bf.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length != 0) {
+                    pathname = tokens[0];
+                    hashes = new String[tokens.length-1];
+                    for (int i = 1; i < tokens.length; i++) {
+                        hashes[i-1] = tokens[i];
+                    }
+                    fileRecipes.put(pathname, chunkHashes);
+                }
+            }
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                bf.close();
+            }
+            catch (Exception e) {
+            }
+        }
     }
 
     public static void writeFileRecipes() {
+        File file = new File(FILE_RECIPES);
+        BufferedWriter bf = null;
+        try {
+            bf = new BufferedWriter(new FileWriter(file));
 
+            
+            for (Map.Entry<String, ArrayList<String>> entry : fileRecipes.entrySet()) {
+                bf.write(entry.getKey());
+                for (int i = 0; i < entry.getValue().size(); i++) {
+                    bf.write("," + entry.getValue().get(i));
+                }
+                bf.newLine();
+            }
+
+            bf.flush();
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        finally {
+            try {
+                bf.close();
+            }
+            catch (Exception e) {
+            }
+        }
     }
 
     public static void writeFingerprintIndex() {
@@ -134,13 +194,29 @@ public class MyDedup {
         byte[] checkSumBytes = md.digest();
         String hash = Base64.getEncoder().encodeToString(checkSumBytes);
         md.reset();
+        // put chunk hash into file recipe
+        chunkHashes.add(hash);
         // check if chunk already exists in fingerprint index
         if (!fingerprintIndex.containsKey(hash)) {
             // check for container overflow
             if (containerOffset + chunkOffset > container.length) {
                 // upload current container
                 if (storage.equals("local")) {
-
+                    // check if data directory exists, create if not
+                    String currentDirectory = System.getProperty("user.dir");
+                    File file = new File(currentDirectory + "/data");
+                    if (!file.exists()) {
+                        file.mkdir();
+                    }
+                    try (FileOutputStream fos = new FileOutputStream(currentDirectory + "/data/container" + containerCount)) {
+                        fos.write(container);
+                    }
+                    catch (FileNotFoundException e) {
+                        e.printStackTrace();
+                    }
+                    catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
                 else if (storage.equals("azure")) {
 
@@ -166,11 +242,7 @@ public class MyDedup {
         String uploadFile, downloadFile, deleteFile, localFile;
         String command = args[0];
         readFingerprintIndex();
-        // System.out.println("Number of containers: " + containerCount);
-        // for (Map.Entry<String, int[]> entry : fingerprintIndex.entrySet()) {
-        //     System.out.println(entry.getKey() + ": " + entry.getValue());
-        // }
-        // System.exit(1);
+        readFileRecipes();
         md = MessageDigest.getInstance("SHA-256");
         if (command.equals("upload")) {
             minChunkSize = Integer.parseInt(args[1]);
@@ -198,6 +270,22 @@ public class MyDedup {
                             finishedChunking = true;
                             processChunk();
                             System.out.println(totalNumBytesRead);
+                            // check if data directory exists, create if not
+                            String currentDirectory = System.getProperty("user.dir");
+                            File file = new File(currentDirectory + "/data");
+                            if (!file.exists()) {
+                                file.mkdir();
+                            }
+                            try (FileOutputStream fos = new FileOutputStream(currentDirectory + "/data/container" + containerCount)) {
+                                fos.write(container);
+                            }
+                            catch (FileNotFoundException e) {
+                                e.printStackTrace();
+                            }
+                            catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            fileRecipes.put(uploadFile, chunkHashes);
                         }
                         else {
                             // first time computing RFP for this chunk
@@ -229,6 +317,22 @@ public class MyDedup {
                                 finishedChunking = true;
                                 processChunk();
                                 System.out.println(totalNumBytesRead);
+                                // check if data directory exists, create if not
+                                String currentDirectory = System.getProperty("user.dir");
+                                File file = new File(currentDirectory + "/data");
+                                if (!file.exists()) {
+                                    file.mkdir();
+                                }
+                                try (FileOutputStream fos = new FileOutputStream(currentDirectory + "/data/container" + containerCount)) {
+                                    fos.write(container);
+                                }
+                                catch (FileNotFoundException e) {
+                                    e.printStackTrace();
+                                }
+                                catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                                fileRecipes.put(uploadFile, chunkHashes);
                             }
                             else {
                                 chunk[chunkOffset] = (byte)cur;
@@ -263,5 +367,6 @@ public class MyDedup {
             storage = args[2];
         }
         writeFingerprintIndex();
+        writeFileRecipes();
     }
 }
