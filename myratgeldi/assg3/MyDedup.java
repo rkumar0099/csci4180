@@ -189,52 +189,54 @@ public class MyDedup {
     }
 
     public static void processChunk() {
-        // compute checksum
-        md.update(chunk, 0, chunkOffset);
-        byte[] checkSumBytes = md.digest();
-        String hash = Base64.getEncoder().encodeToString(checkSumBytes);
-        md.reset();
-        // put chunk hash into file recipe
-        chunkHashes.add(hash);
-        // check if chunk already exists in fingerprint index
-        if (!fingerprintIndex.containsKey(hash)) {
-            // check for container overflow
-            if (containerOffset + chunkOffset > container.length) {
-                // upload current container
-                if (storage.equals("local")) {
-                    // check if data directory exists, create if not
-                    String currentDirectory = System.getProperty("user.dir");
-                    File file = new File(currentDirectory + "/data");
-                    if (!file.exists()) {
-                        file.mkdir();
+        if (chunkOffset != 0) {
+            // compute checksum
+            md.update(chunk, 0, chunkOffset);
+            byte[] checkSumBytes = md.digest();
+            String hash = Base64.getEncoder().encodeToString(checkSumBytes);
+            md.reset();
+            // put chunk hash into file recipe
+            chunkHashes.add(hash);
+            // check if chunk already exists in fingerprint index
+            if (!fingerprintIndex.containsKey(hash)) {
+                // check for container overflow
+                if (containerOffset + chunkOffset > container.length) {
+                    // upload current container
+                    if (storage.equals("local")) {
+                        // check if data directory exists, create if not
+                        String currentDirectory = System.getProperty("user.dir");
+                        File file = new File(currentDirectory + "/data");
+                        if (!file.exists()) {
+                            file.mkdir();
+                        }
+                        try (FileOutputStream fos = new FileOutputStream(currentDirectory + "/data/container" + containerCount)) {
+                            fos.write(container);
+                        }
+                        catch (FileNotFoundException e) {
+                            e.printStackTrace();
+                        }
+                        catch (IOException e) {
+                            e.printStackTrace();
+                        }
                     }
-                    try (FileOutputStream fos = new FileOutputStream(currentDirectory + "/data/container" + containerCount)) {
-                        fos.write(container);
-                    }
-                    catch (FileNotFoundException e) {
-                        e.printStackTrace();
-                    }
-                    catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                else if (storage.equals("azure")) {
+                    else if (storage.equals("azure")) {
 
+                    }
+                    container = new byte[1048576];
+                    containerOffset = 0;
+                    containerCount++;
                 }
-                container = new byte[1048576];
-                containerOffset = 0;
-                containerCount++;
+                // move chunk into container
+                System.arraycopy(chunk, 0, container, containerOffset, chunkOffset);
+                // update fingerprint index
+
+                int[] chunkInformation = {containerCount, containerOffset, chunkOffset, 1};
+                containerOffset += chunkOffset;
+                fingerprintIndex.put(hash, chunkInformation);
             }
-            // move chunk into container
-            System.arraycopy(chunk, 0, container, containerOffset, chunkOffset);
-            // update fingerprint index
-
-            int[] chunkInformation = {containerCount, containerOffset, chunkOffset, 1};
-            containerOffset += chunkOffset;
-            fingerprintIndex.put(hash, chunkInformation);
+            chunk = new byte[maxChunkSize];
+            chunkOffset = 0;
         }
-        chunk = new byte[maxChunkSize];
-        chunkOffset = 0;
     }
 
     public static void main(String args[]) throws NoSuchAlgorithmException {
@@ -248,15 +250,16 @@ public class MyDedup {
             minChunkSize = Integer.parseInt(args[1]);
             avgChunkSize = Integer.parseInt(args[2]);
             maxChunkSize = Integer.parseInt(args[3]);
-            assert checkPowerTwo(minChunkSize) : "min chunk size is not power of two";
-            assert checkPowerTwo(avgChunkSize) : "avg chunk size is not power of two";
-            assert checkPowerTwo(maxChunkSize) : "max chunk size is not power of two";
+            // assert checkPowerTwo(minChunkSize) : "min chunk size is not power of two";
+            // assert checkPowerTwo(avgChunkSize) : "avg chunk size is not power of two";
+            // assert checkPowerTwo(maxChunkSize) : "max chunk size is not power of two";
             d = Integer.parseInt(args[4]);
             uploadFile = args[5];
             storage = args[6];
             try {
                 InputStream input = new FileInputStream(uploadFile);
-                int mask = getAnchorMask(avgChunkSize);
+                // int mask = getAnchorMask(avgChunkSize);
+                int mask = 15;
                 chunk = new byte[maxChunkSize];
                 boolean finishedChunking = false;
                 boolean newChunk = true;
