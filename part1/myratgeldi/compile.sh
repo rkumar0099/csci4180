@@ -1,0 +1,2 @@
+hadoop com.sun.tools.javac.Main PDNodeWritable.java PDPreProcess.java PDPostProcess.java ParallelDijkstra.java
+jar cf my.jar PDNodeWritable.class PDPreProcess*.class PDPostProcess*.class ParallelDijkstra*.class
