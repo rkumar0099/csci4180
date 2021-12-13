@@ -6,6 +6,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 
+
+
 public class MyDedup {
     private static final int CONTAINER_SIZE = 1024*1024;
     private static PrintStream out = new PrintStream(System.out);
@@ -24,6 +26,7 @@ public class MyDedup {
     private static String dedupStorage;
     private static int totalBytesContainer = 0;
     private static int numDedupChunks = 0;
+    private static int base;
 
     public static void initFingerPrintIndex() {
         BufferedReader bf = null;
@@ -56,7 +59,9 @@ public class MyDedup {
         }
         finally {
             try {
-                bf.close();
+                if (bf != null) {
+                    bf.close();
+                }
             }
             catch (Exception e) {
                 e.printStackTrace();
@@ -355,7 +360,7 @@ public class MyDedup {
                 }
 
                 if (read == minSize) { 
-                    int bytesRead = rfp(minSize, 257, avgSize, chunk, fs);
+                    int bytesRead = rfp(minSize, base, avgSize, chunk, fs);
                     totalBytesRead += bytesRead;
                     numChunks += 1;
                     deduplicate(chunk, bytesRead, fileChunks);
@@ -374,8 +379,11 @@ public class MyDedup {
             if (containerBytesStored > 0) {
                 ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount, dedupStorage);
                 containerCount += 1;
+                totalBytesContainer += containerBytesStored;
                 new Thread(task).start();
-                Thread.sleep(500);
+            }
+            while(activeThreads > 0) {
+                Thread.sleep(100);
             }
             storeFingerPrintIndex();
             storeFileReceipt();
@@ -386,12 +394,119 @@ public class MyDedup {
         }
         out.println("Total bytes stored in containers are: " + totalBytesContainer);
         int uniqueChunks = fingerPrintIndex.size();
-        out.println("Unique chunks in storage: " + uniqueChunks + "\nDeduplicate chunks for this upload: " + numDedupChunks);
+        out.println("Unique chunks in storage: " + (numChunks - numDedupChunks) + "\nDeduplicate chunks for this upload: " + numDedupChunks);
         out.println("Time took to generate " + numChunks + ": " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
     }
 
-    public static void downloadFile(String pathname) {
+    public static void normalDownloadFile(String pathname, String localFileName) {
+        try {
+            if (!fileReceipt.containsKey(pathname)) {
+                out.println("[Error] File with entered pathname is not uploaded in the system.");
+                return;
+            }
+            HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
+            int totalNumberChunks = fileChunks.size();
+            int spaceLeft = CONTAINER_SIZE;
+            int offset = 0;
+            String currDir = System.getProperty("user.dir");
+            FileOutputStream output = new FileOutputStream(currDir + "/" + localFileName);
 
+            for (int i = 1; i <= totalNumberChunks; i++) {
+                String chunkHash = fileChunks.get(i);
+                Integer[] metaData = fingerPrintIndex.get(chunkHash);
+                File file = new File(currDir + "/data/container" + metaData[0]);
+                FileInputStream fs = new FileInputStream(file);
+                fs.skip(metaData[1]);
+                if(spaceLeft < metaData[2]) {
+                    output.write(container, 0, offset);
+                    container = new byte[CONTAINER_SIZE];
+                    spaceLeft = CONTAINER_SIZE;
+                    offset = 0;
+                }
+                int read = fs.read(container, offset, metaData[2]);
+                if (read != metaData[2]) {
+                    out.println("[Error] Can't read correct number of bytes from container while downloading");
+                    return;
+                }
+                spaceLeft -= read;
+                offset += read;
+                fs.close();
+             
+            }
+
+            if (offset > 0) {
+                output.write(container, 0, offset);
+            }
+
+            output.close();
+            out.println("File downloaded successfully");
+
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void multithreadDownloadFile(String pathname, String localFileName) {
+        try {
+            if (!fileReceipt.containsKey(pathname)) {
+                out.println("[Error] File with entered pathname is not uploaded in the system.");
+                return;
+            }
+            
+            
+            String currDir = System.getProperty("user.dir");
+            File threadFile = new File(currDir + "/temp");
+            if (!threadFile.exists()) {
+                threadFile.mkdir();
+            }
+            int numTasks = 0;
+            int totalNumberChunks = fileReceipt.get(pathname).size();
+            int ratio = totalNumberChunks / 500;
+            int start = 1;
+            for(int i = 0; i < ratio; i++) {
+                numTasks += 1;
+                FetchChunks task = new FetchChunks(pathname, numTasks, start, start+500-1);
+                new Thread(task).start();
+                start += 500;
+            }
+            if (start <= totalNumberChunks) {
+                numTasks += 1;
+                FetchChunks task = new FetchChunks(pathname, numTasks, start, totalNumberChunks);
+                new Thread(task).start();
+            }
+            while(activeThreads > 0) {
+                Thread.sleep(100);
+            }
+            
+
+            File file = new File(currDir + "/" + localFileName);
+            FileOutputStream output = new FileOutputStream(file, true);
+
+            for(int i = 1; i <= numTasks; i++) {
+                File tempFile = new File(currDir + "/temp/file" + i);
+                FileInputStream fs = new FileInputStream(tempFile);
+                while(true) {
+                    int read = fs.read(container, 0, CONTAINER_SIZE);
+                    if (read == -1) {
+                        break;
+                    }
+                    output.write(container, 0, read);
+                }
+                fs.close();
+
+            }
+            output.close();
+            File[] tempFiles = threadFile.listFiles();
+            for(File f: tempFiles) {
+                f.delete();
+            }
+            threadFile.delete();
+            out.println("File downloaded successfully");
+
+
+        } catch(Exception e) {
+
+        }
     }
 
     public static void deleteFile(String pathname) {
@@ -400,54 +515,60 @@ public class MyDedup {
     
 
     public static void main(String[] args) {
-            minSize = Integer.parseInt(args[1]);
-            avgSize = Integer.parseInt(args[2]);
-            maxSize = Integer.parseInt(args[3]);
-            
+        try {
 
-            if (!checkPowerTwo(minSize)) {
-               out.println("[Error] Minimum size of chunk must be a power of 2");
-               return;
-            } 
-            if (!checkPowerTwo(avgSize)) {
-                out.println("[Error] Average size of chunk must be a power of 2");
-                return;
-           }
-            if (!checkPowerTwo(maxSize)) {
-                out.println("[Error] Maximum size of chunk must be a power of 2");
-                return;
-            }
-
-            dedupStorage = args[6];
             initFingerPrintIndex();
             initFileReceipt();
-
-            try {
-
             md = MessageDigest.getInstance("SHA-256");
-            switch(args[0]) {
+            String option = args[0];
+            String pathname;
+
+            switch(option) {
                 case "upload":
+                    minSize = Integer.parseInt(args[1]);
+                    avgSize = Integer.parseInt(args[2]);
+                    maxSize = Integer.parseInt(args[3]);
+                    if (!checkPowerTwo(minSize)) {
+                        out.println("[Error] Minimum size of chunk must be a power of 2");
+                        return;
+                    } 
+                    if (!checkPowerTwo(avgSize)) {
+                        out.println("[Error] Average size of chunk must be a power of 2");
+                        return;
+                    }
+                    if (!checkPowerTwo(maxSize)) {
+                        out.println("[Error] Maximum size of chunk must be a power of 2");
+                        return;
+                    }
+                    dedupStorage = args[6];
+                    base = Integer.parseInt(args[4]);
                     uploadFile(args[5]);
                     break;
-
+            
                 case "download":
-                    downloadFile(args[5]);
+                    pathname = args[1];
+                    String downloadFile = args[2];
+                    dedupStorage = args[3];
+                    long start = System.currentTimeMillis();
+                    //multithreadDownloadFile(pathname, downloadFile);
+                    normalDownloadFile(pathname, downloadFile);
+                    out.println("File downloaded in " + (System.currentTimeMillis() - start)/1000 + " seconds");
                     break;
 
                 case "delete":
-                    deleteFile(args[5]);
+                    pathname = args[1];
+                    deleteFile(pathname);
                     break;
-                
+
                 default:
                     out.println("[Error] Choose upload, download, or delete.");
                     return;
+
             }
+
         } catch(Exception e) {
             e.printStackTrace();
-        }
-      
-
-            
+        }            
             
             /*
             String s = "2144364329";
@@ -461,7 +582,8 @@ public class MyDedup {
             }
             */
 
-    }
+}
+
 
     public static class ProcessContainer implements Runnable {
         byte[] container;
@@ -479,19 +601,84 @@ public class MyDedup {
         @Override
         public void run() {
             try {
-                String currDir = System.getProperty("user.dir"); 
-                File file = new File(currDir + "/storage");
-                if (!file.exists()) {
-                    file.mkdir();
+                incrementThread();
+                if (dedupStorage.equals("local")) {
+
+                    String currDir = System.getProperty("user.dir"); 
+                    File file = new File(currDir + "/data");
+                    if (!file.exists()) {
+                        file.mkdir();
+                    }
+                    FileOutputStream writer = new FileOutputStream(currDir + "/data/container" + containerID);
+                    writer.write(container);
+                    writer.close();
+                } else if (dedupStorage.equals("azure")) {
+                    // store the container in cloud
                 }
-                FileOutputStream writer = new FileOutputStream(currDir + "/storage/container" + containerID);
-                writer.write(container);
-                writer.close();
+                decrementThread();
 
             } catch(Exception e) {
                 out.println("[Error] Error while storing container");
                 e.printStackTrace();
             }
+        }
+
+        public synchronized void incrementThread() {
+            activeThreads += 1;
+            out.println(activeThreads);
+        }
+
+        public synchronized void decrementThread() {
+            activeThreads -= 1;
+            out.println("Thread decrement");
+        }
+    }
+
+    public static class FetchChunks implements Runnable {
+        String filename;
+        int startID, endID, threadID;
+
+        public FetchChunks(String filename, int threadId, int start, int end) {
+            this.filename = filename;
+            this.startID = start;
+            this.endID = end;
+            this.threadID = threadId;
+        }
+
+        @Override 
+        public void run() {
+            try {
+                incrementThread();
+                HashMap<Integer, String> fileChunks = fileReceipt.get(filename);
+                String currDir = System.getProperty("user.dir");
+                String path = currDir + "/temp/file" + threadID;
+                FileOutputStream output = new FileOutputStream(path, true);
+                for(int i = startID; i <= endID; i++) {
+                    String chunkHash = fileChunks.get(i);
+                    Integer[] metaData = fingerPrintIndex.get(chunkHash);
+                    File file = new File(currDir + "/data/container" + metaData[0]);
+                    FileInputStream fs = new FileInputStream(file);
+                    fs.skip(metaData[1]);
+                    byte[] data = new byte[metaData[2]];
+                    int read = fs.read(data, 0, metaData[2]);
+                    if (read == metaData[2]) {
+                        output.write(data);
+                    } 
+                }
+                decrementThread();
+
+            } catch(Exception e) {
+                e.printStackTrace();
+            }
+        }
+        public synchronized void incrementThread() {
+            activeThreads += 1;
+            out.println("Thread incremented");
+        }
+
+        public synchronized void decrementThread() {
+            activeThreads -= 1;
+            out.println("Thread decrement");
         }
     }
 
