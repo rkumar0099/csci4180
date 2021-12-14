@@ -80,9 +80,9 @@ public class MyDedup {
 
     public static void storeFingerPrintIndex() {
         
-            File file = new File(INDEX_FILE);
             BufferedWriter bf = null;
             try {
+                File file = new File(INDEX_FILE);
                 bf = new BufferedWriter(new FileWriter(file));
     
                 bf.write(Integer.toString(containerCount));
@@ -250,8 +250,8 @@ public class MyDedup {
                     totalBytesContainer += containerBytesStored;
                     containerCount += 1;
                     containerBytesStored = 0;
-                    deduplicate(chunk, chunkSize, fileChunks);
-                } else {
+                    //deduplicate(chunk, chunkSize, fileChunks);
+                } //else {
                     int startIndex = containerBytesStored;
                     for(int i = 0; i < chunkSize; i++) {
                         container[containerBytesStored] = chunk[i];
@@ -260,11 +260,11 @@ public class MyDedup {
                     Integer[] metaData = {containerCount, startIndex, chunkSize, 1};
                     fingerPrintIndex.put(chunkHash, metaData);
                     out.println("Chunk stored in container");
-                }
+                //}
             }
-            if (!fileChunks.containsKey(numChunks)) {
+            //if (!fileChunks.containsKey(numChunks)) {
                 fileChunks.put(numChunks, chunkHash);
-            }
+            //}
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -364,17 +364,15 @@ public class MyDedup {
                     numChunks += 1;
                     deduplicate(chunk, read, fileChunks);
                     finishChunking = true;
-                    // process the chunk in separate thread
                     break;
                 }
 
                 if (read == minSize) { 
                     int bytesRead = rfp(minSize, base, avgSize, chunk, fs);
                     totalBytesRead += bytesRead;
+                    out.println(totalBytesRead);
                     numChunks += 1;
                     deduplicate(chunk, bytesRead, fileChunks);
-                    out.println(totalBytesRead);
-                    // process the chunk in separate thread
                 }
 
                 // to test first 20 points with ta program
@@ -436,6 +434,7 @@ public class MyDedup {
                 out.println("[Error] File with entered pathname is not present in the system.");
                 return;
             }
+            long start = System.currentTimeMillis();
             HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
             int totalNumberChunks = fileChunks.size();
             int spaceLeft = CONTAINER_SIZE;
@@ -471,6 +470,7 @@ public class MyDedup {
 
             output.close();
             out.println("File downloaded successfully");
+            out.println("File downloaded in: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -483,7 +483,7 @@ public class MyDedup {
                 out.println("[Error] File with entered pathname is not present in the system.");
                 return;
             }
-            
+            long startTime = System.currentTimeMillis();
             File threadFile = new File(currDir + "/temp");
             if (!threadFile.exists()) {
                 threadFile.mkdir();
@@ -514,6 +514,7 @@ public class MyDedup {
             for(int i = 1; i <= numTasks; i++) {
                 File tempFile = new File(currDir + "/temp/file" + i);
                 FileInputStream fs = new FileInputStream(tempFile);
+                
                 while(true) {
                     int read = fs.read(container, 0, CONTAINER_SIZE);
                     if (read == -1) {
@@ -531,6 +532,7 @@ public class MyDedup {
             }
             threadFile.delete();
             out.println("File downloaded successfully");
+            out.println("File downloaded in: " + (System.currentTimeMillis() - startTime)/1000.0 + " seconds");
 
 
         } catch(Exception e) {
@@ -544,6 +546,7 @@ public class MyDedup {
                 out.println("No file with entered pathname present in the system");
                 return;
             }
+            long start = System.currentTimeMillis();
             HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
             for(Integer chunkId: fileChunks.keySet()) {
                 String chunkHash = fileChunks.get(chunkId);
@@ -571,6 +574,7 @@ public class MyDedup {
             storeFingerPrintIndex();
             storeFileReceipt();
             out.println("File deleted successfully");
+            out.println("File deleted in: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -614,10 +618,8 @@ public class MyDedup {
                     pathname = args[1];
                     String downloadFile = args[2];
                     dedupStorage = args[3];
-                    long start = System.currentTimeMillis();
                     //multithreadDownloadFile(pathname, downloadFile);
-                    normalDownloadFile(pathname, downloadFile);
-                    out.println("File downloaded in " + (System.currentTimeMillis() - start)/1000 + " seconds");
+                    normalDownloadFile(pathname, downloadFile); // run normal download
                     break;
 
                 case "delete":
@@ -737,13 +739,13 @@ public class MyDedup {
             }
         }
         public synchronized void incrementThread() {
-            activeThreads += 1;
             out.println("Thread incremented");
+            activeThreads += 1;
         }
 
         public synchronized void decrementThread() {
-            activeThreads -= 1;
             out.println("Thread decrement");
+            activeThreads -= 1;
         }
     }
 
