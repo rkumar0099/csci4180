@@ -15,6 +15,7 @@ public class MyDedup {
     private static final String FILE_RECEIPTS = "recipe.txt";
     private static byte[] container = new byte[CONTAINER_SIZE];
     private static int containerCount, containerBytesStored;
+    private static HashMap<Integer, Integer> containerStatus = new HashMap<Integer, Integer>();
     private static byte[] chunk;
     private static HashMap<String, Integer[]> fingerPrintIndex = new HashMap<String, Integer[]>();
     private static HashMap<String, HashMap<Integer, String>> fileReceipt = new HashMap<String, HashMap<Integer, String>>(); 
@@ -27,6 +28,7 @@ public class MyDedup {
     private static int totalBytesContainer = 0;
     private static int numDedupChunks = 0;
     private static int base;
+    private static String currDir;
 
     public static void initFingerPrintIndex() {
         BufferedReader bf = null;
@@ -51,6 +53,12 @@ public class MyDedup {
                     refCounter = Integer.parseInt(tokens[4]);
                     Integer[] payload = {containerNo, containerOffset, chunkSize, refCounter};
                     fingerPrintIndex.put(hash, payload);
+                    if (containerStatus.containsKey(containerNo)) {
+                        int count = containerStatus.get(containerNo) + refCounter;
+                        containerStatus.put(containerNo, count);
+                    } else {
+                        containerStatus.put(containerNo, refCounter);
+                    }
                 }
             }
         }
@@ -370,7 +378,7 @@ public class MyDedup {
 
                 // to test first 20 points with ta program
                 
-                //if (numChunks == 1000) {
+                //if (numChunks == 20) {
                     //out.println("Time took to generate " + numChunks + ": " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
                     //return;
                 //}
@@ -401,14 +409,13 @@ public class MyDedup {
     public static void normalDownloadFile(String pathname, String localFileName) {
         try {
             if (!fileReceipt.containsKey(pathname)) {
-                out.println("[Error] File with entered pathname is not uploaded in the system.");
+                out.println("[Error] File with entered pathname is not present in the system.");
                 return;
             }
             HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
             int totalNumberChunks = fileChunks.size();
             int spaceLeft = CONTAINER_SIZE;
             int offset = 0;
-            String currDir = System.getProperty("user.dir");
             FileOutputStream output = new FileOutputStream(currDir + "/" + localFileName);
 
             for (int i = 1; i <= totalNumberChunks; i++) {
@@ -449,12 +456,10 @@ public class MyDedup {
     public static void multithreadDownloadFile(String pathname, String localFileName) {
         try {
             if (!fileReceipt.containsKey(pathname)) {
-                out.println("[Error] File with entered pathname is not uploaded in the system.");
+                out.println("[Error] File with entered pathname is not present in the system.");
                 return;
             }
             
-            
-            String currDir = System.getProperty("user.dir");
             File threadFile = new File(currDir + "/temp");
             if (!threadFile.exists()) {
                 threadFile.mkdir();
@@ -510,7 +515,42 @@ public class MyDedup {
     }
 
     public static void deleteFile(String pathname) {
+        try {
+            if (!fileReceipt.containsKey(pathname)) {
+                out.println("No file with entered pathname present in the system");
+                return;
+            }
+            HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
+            for(Integer chunkId: fileChunks.keySet()) {
+                String chunkHash = fileChunks.get(chunkId);
+                Integer[] metaData = fingerPrintIndex.get(chunkHash);
+                metaData[3] -= 1;
+                int count = containerStatus.get(metaData[0]) - 1;
+                containerStatus.put(metaData[0], count);
+                if (metaData[3] == 0) {
+                    // delete this chunk from finger print index;
+                    fingerPrintIndex.remove(chunkHash);
+                }
+                if (count == 0) {
+                    // delete the container;
+                    if (dedupStorage.equals("local")) {
+                        File file = new File(currDir + "/data/container" + metaData[0]);
+                        file.delete();
+                        containerCount -= 1;
+                    } else if (dedupStorage.equals("azure")) {
 
+                    }
+                }
+            }
+            // delete file receipt
+            fileReceipt.remove(pathname);
+            storeFingerPrintIndex();
+            storeFileReceipt();
+            out.println("File deleted successfully");
+
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
     }
     
 
@@ -522,6 +562,7 @@ public class MyDedup {
             md = MessageDigest.getInstance("SHA-256");
             String option = args[0];
             String pathname;
+            currDir = System.getProperty("user.dir");
 
             switch(option) {
                 case "upload":
@@ -557,6 +598,7 @@ public class MyDedup {
 
                 case "delete":
                     pathname = args[1];
+                    dedupStorage = args[2];
                     deleteFile(pathname);
                     break;
 
@@ -604,7 +646,6 @@ public class MyDedup {
                 incrementThread();
                 if (dedupStorage.equals("local")) {
 
-                    String currDir = System.getProperty("user.dir"); 
                     File file = new File(currDir + "/data");
                     if (!file.exists()) {
                         file.mkdir();
@@ -650,7 +691,6 @@ public class MyDedup {
             try {
                 incrementThread();
                 HashMap<Integer, String> fileChunks = fileReceipt.get(filename);
-                String currDir = System.getProperty("user.dir");
                 String path = currDir + "/temp/file" + threadID;
                 FileOutputStream output = new FileOutputStream(path, true);
                 for(int i = startID; i <= endID; i++) {
