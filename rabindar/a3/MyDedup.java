@@ -29,6 +29,7 @@ public class MyDedup {
     private static int numDedupChunks = 0;
     private static int base;
     private static String currDir;
+    private static long totalNumFiles, totalNumContainers, totalNumPreDupChunks, totalNumUniqueChunks, totalPreDedupBytes, totalUniqueBytes;
 
     public static void initFingerPrintIndex() {
         BufferedReader bf = null;
@@ -384,6 +385,8 @@ public class MyDedup {
                 //}
                 
             }
+
+            
             if (containerBytesStored > 0) {
                 ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount, dedupStorage);
                 containerCount += 1;
@@ -393,6 +396,18 @@ public class MyDedup {
             while(activeThreads > 0) {
                 Thread.sleep(100);
             }
+            
+            
+            totalNumFiles = fileReceipt.size();
+            totalNumContainers = containerCount;
+            totalNumUniqueChunks = fingerPrintIndex.size();
+            for(String chunkHash: fingerPrintIndex.keySet()) {
+                Integer[] metaData = fingerPrintIndex.get(chunkHash);
+                totalUniqueBytes += metaData[2];
+                totalNumPreDupChunks += (metaData[3] - 1);
+                totalPreDedupBytes += ((metaData[3]-1) * metaData[2]);
+            }
+            
             storeFingerPrintIndex();
             storeFileReceipt();
 
@@ -400,10 +415,19 @@ public class MyDedup {
             out.println("[Error] Can't open the upload file. ");
             e.printStackTrace();
         }
+
+        out.println("Total number of files that have been stored: " + totalNumFiles);
+        out.println("Total number of pre-deduplicated chunks in storage: " + totalNumPreDupChunks);
+        out.println("Total number of unique chunks in storage: " + totalNumUniqueChunks);
+        out.println("Total number of bytes of pre-deduplicated chunks in storage: " + totalPreDedupBytes);
+        out.println("Total number of bytes of unique chunks in storage: " + totalUniqueBytes);
         out.println("Total bytes stored in containers are: " + totalBytesContainer);
-        int uniqueChunks = fingerPrintIndex.size();
-        out.println("Unique chunks in storage: " + (numChunks - numDedupChunks) + "\nDeduplicate chunks for this upload: " + numDedupChunks);
-        out.println("Time took to generate " + numChunks + ": " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
+        out.println("Total number of containers in storage: " + containerCount);
+        double dedupRatio = (double)(totalPreDedupBytes) / totalUniqueBytes;
+        out.println("Deduplication ratio: " + dedupRatio);
+        
+        //out.println("Unique chunks in storage: " + (numChunks - numDedupChunks) + "\nDeduplicate chunks for this upload: " + numDedupChunks);
+        out.println("Upload time: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
     }
 
     public static void normalDownloadFile(String pathname, String localFileName) {
@@ -607,6 +631,7 @@ public class MyDedup {
                     return;
 
             }
+            
 
         } catch(Exception e) {
             e.printStackTrace();
