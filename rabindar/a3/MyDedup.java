@@ -16,7 +16,6 @@ public class MyDedup {
     private static byte[] container = new byte[CONTAINER_SIZE];
     private static int containerCount, containerBytesStored;
     private static HashMap<Integer, Integer> containerStatus = new HashMap<Integer, Integer>();
-    private static byte[] chunk;
     private static HashMap<String, Integer[]> fingerPrintIndex = new HashMap<String, Integer[]>();
     private static HashMap<String, HashMap<Integer, String>> fileReceipt = new HashMap<String, HashMap<Integer, String>>(); 
     private static int minSize, avgSize, maxSize;
@@ -244,14 +243,13 @@ public class MyDedup {
                 int spaceLeft = CONTAINER_SIZE - containerBytesStored;
                 if (spaceLeft < chunkSize) {
                     // create new task to store the container in local or azure
-                    ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount, dedupStorage);
+                    ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount);
                     new Thread(task).start();
                     container = new byte[CONTAINER_SIZE];
                     totalBytesContainer += containerBytesStored;
                     containerCount += 1;
                     containerBytesStored = 0;
-                    //deduplicate(chunk, chunkSize, fileChunks);
-                } //else {
+                }
                     int startIndex = containerBytesStored;
                     for(int i = 0; i < chunkSize; i++) {
                         container[containerBytesStored] = chunk[i];
@@ -260,11 +258,11 @@ public class MyDedup {
                     Integer[] metaData = {containerCount, startIndex, chunkSize, 1};
                     fingerPrintIndex.put(chunkHash, metaData);
                     out.println("Chunk stored in container");
-                //}
+              
             }
-            //if (!fileChunks.containsKey(numChunks)) {
+            
                 fileChunks.put(numChunks, chunkHash);
-            //}
+            
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -344,6 +342,7 @@ public class MyDedup {
         try {
             int read = 0;
             int totalBytesRead = 0;
+            byte[] chunk;
 
             File file = new File(pathname);
             FileInputStream fs = new FileInputStream(file);
@@ -384,9 +383,9 @@ public class MyDedup {
                 
             }
 
-            
+            fs.close();
             if (containerBytesStored > 0) {
-                ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount, dedupStorage);
+                ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount);
                 containerCount += 1;
                 totalBytesContainer += containerBytesStored;
                 new Thread(task).start();
@@ -402,8 +401,8 @@ public class MyDedup {
             for(String chunkHash: fingerPrintIndex.keySet()) {
                 Integer[] metaData = fingerPrintIndex.get(chunkHash);
                 totalUniqueBytes += metaData[2];
-                totalNumPreDupChunks += (metaData[3] - 1);
-                totalPreDedupBytes += ((metaData[3]-1) * metaData[2]);
+                totalNumPreDupChunks += metaData[3];
+                totalPreDedupBytes += (metaData[3] * metaData[2]);
             }
             
             storeFingerPrintIndex();
@@ -419,10 +418,10 @@ public class MyDedup {
         out.println("Total number of unique chunks in storage: " + totalNumUniqueChunks);
         out.println("Total number of bytes of pre-deduplicated chunks in storage: " + totalPreDedupBytes);
         out.println("Total number of bytes of unique chunks in storage: " + totalUniqueBytes);
-        out.println("Total bytes stored in containers are: " + totalBytesContainer);
+        //out.println("Total bytes stored in containers are: " + totalBytesContainer);
         out.println("Total number of containers in storage: " + containerCount);
         double dedupRatio = (double)(totalPreDedupBytes) / totalUniqueBytes;
-        out.println("Deduplication ratio: " + dedupRatio);
+        out.printf("Deduplication ratio: %.2f\n", dedupRatio);
         
         //out.println("Unique chunks in storage: " + (numChunks - numDedupChunks) + "\nDeduplicate chunks for this upload: " + numDedupChunks);
         out.println("Upload time: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
@@ -658,13 +657,13 @@ public class MyDedup {
         byte[] container;
         int containerSize;
         int containerID;
-        String storage;
+        
 
-        public ProcessContainer(byte[] container, int containerSize, int containerID, String storage) {
+        public ProcessContainer(byte[] container, int containerSize, int containerID) {
             this.container = container;
             this.containerSize = containerSize;
             this.containerID = containerID;
-            this.storage = storage;
+           
         }
 
         @Override
