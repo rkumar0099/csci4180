@@ -9,7 +9,7 @@ import com.microsoft.azure.storage.*;
 import com.microsoft.azure.storage.blob.*;
 
 
-public class Dedup {
+public class MyDedup {
     private static final int CONTAINER_SIZE = 1024*1024;
     private static PrintStream out = new PrintStream(System.out);
     private static final String INDEX_FILE = "index.txt";
@@ -17,7 +17,6 @@ public class Dedup {
     private static byte[] container = new byte[CONTAINER_SIZE];
     private static int containerCount, containerBytesStored;
     private static HashMap<Integer, Integer> containerStatus = new HashMap<Integer, Integer>();
-    private static byte[] chunk;
     private static HashMap<String, Integer[]> fingerPrintIndex = new HashMap<String, Integer[]>();
     private static HashMap<String, HashMap<Integer, String>> fileReceipt = new HashMap<String, HashMap<Integer, String>>(); 
     private static int minSize, avgSize, maxSize;
@@ -93,9 +92,9 @@ public class Dedup {
 
     public static void storeFingerPrintIndex() {
         
-            File file = new File(INDEX_FILE);
             BufferedWriter bf = null;
             try {
+                File file = new File(INDEX_FILE);
                 bf = new BufferedWriter(new FileWriter(file));
     
                 bf.write(Integer.toString(containerCount));
@@ -250,21 +249,20 @@ public class Dedup {
                 Integer[] metaData = fingerPrintIndex.get(chunkHash);
                 metaData[3] += 1;
                 numDedupChunks += 1;
-                out.println("Chunk deduplicated");
+                // out.println("Chunk deduplicated");
             } else {
                 // if container has only 10kb left, size of chunk is 12kb
                 // test on binary file
                 int spaceLeft = CONTAINER_SIZE - containerBytesStored;
                 if (spaceLeft < chunkSize) {
                     // create new task to store the container in local or azure
-                    ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount, dedupStorage);
+                    ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount);
                     new Thread(task).start();
                     container = new byte[CONTAINER_SIZE];
                     totalBytesContainer += containerBytesStored;
                     containerCount += 1;
                     containerBytesStored = 0;
-                    deduplicate(chunk, chunkSize, fileChunks);
-                } else {
+                }
                     int startIndex = containerBytesStored;
                     for(int i = 0; i < chunkSize; i++) {
                         container[containerBytesStored] = chunk[i];
@@ -272,12 +270,12 @@ public class Dedup {
                     }
                     Integer[] metaData = {containerCount, startIndex, chunkSize, 1};
                     fingerPrintIndex.put(chunkHash, metaData);
-                    out.println("Chunk stored in container");
-                }
+                    // out.println("Chunk stored in container");
+              
             }
-            if (!fileChunks.containsKey(numChunks)) {
+            
                 fileChunks.put(numChunks, chunkHash);
-            }
+            
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -357,11 +355,12 @@ public class Dedup {
         try {
             int read = 0;
             int totalBytesRead = 0;
+            byte[] chunk;
 
             File file = new File(pathname);
             FileInputStream fs = new FileInputStream(file);
 
-            out.println(totalBytesRead);
+            // out.println(totalBytesRead);
             while(!finishChunking) {
                 chunk = new byte[maxSize];
                 read = fs.read(chunk, 0, minSize);
@@ -373,21 +372,19 @@ public class Dedup {
 
                 if (read < minSize && read > 0) {
                     totalBytesRead += read;
-                    out.println(totalBytesRead);
+                    // out.println(totalBytesRead);
                     numChunks += 1;
                     deduplicate(chunk, read, fileChunks);
                     finishChunking = true;
-                    // process the chunk in separate thread
                     break;
                 }
 
                 if (read == minSize) { 
                     int bytesRead = rfp(minSize, base, avgSize, chunk, fs);
                     totalBytesRead += bytesRead;
+                    // out.println(totalBytesRead);
                     numChunks += 1;
                     deduplicate(chunk, bytesRead, fileChunks);
-                    out.println(totalBytesRead);
-                    // process the chunk in separate thread
                 }
 
                 // to test first 20 points with ta program
@@ -399,9 +396,9 @@ public class Dedup {
                 
             }
 
-            
+            fs.close();
             if (containerBytesStored > 0) {
-                ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount, dedupStorage);
+                ProcessContainer task = new ProcessContainer(container, containerBytesStored, containerCount);
                 containerCount += 1;
                 totalBytesContainer += containerBytesStored;
                 new Thread(task).start();
@@ -417,8 +414,8 @@ public class Dedup {
             for(String chunkHash: fingerPrintIndex.keySet()) {
                 Integer[] metaData = fingerPrintIndex.get(chunkHash);
                 totalUniqueBytes += metaData[2];
-                totalNumPreDupChunks += (metaData[3] - 1);
-                totalPreDedupBytes += ((metaData[3]-1) * metaData[2]);
+                totalNumPreDupChunks += metaData[3];
+                totalPreDedupBytes += (metaData[3] * metaData[2]);
             }
             
             storeFingerPrintIndex();
@@ -428,19 +425,19 @@ public class Dedup {
             out.println("[Error] Can't open the upload file. ");
             e.printStackTrace();
         }
-
+        out.println("Report Output:");
         out.println("Total number of files that have been stored: " + totalNumFiles);
         out.println("Total number of pre-deduplicated chunks in storage: " + totalNumPreDupChunks);
         out.println("Total number of unique chunks in storage: " + totalNumUniqueChunks);
         out.println("Total number of bytes of pre-deduplicated chunks in storage: " + totalPreDedupBytes);
         out.println("Total number of bytes of unique chunks in storage: " + totalUniqueBytes);
-        out.println("Total bytes stored in containers are: " + totalBytesContainer);
+        //out.println("Total bytes stored in containers are: " + totalBytesContainer);
         out.println("Total number of containers in storage: " + containerCount);
         double dedupRatio = (double)(totalPreDedupBytes) / totalUniqueBytes;
-        out.println("Deduplication ratio: " + dedupRatio);
+        out.printf("Deduplication ratio: %.2f\n", dedupRatio);
         
         //out.println("Unique chunks in storage: " + (numChunks - numDedupChunks) + "\nDeduplicate chunks for this upload: " + numDedupChunks);
-        out.println("Upload time: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
+        // out.println("Upload time: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
     }
 
     public static void normalDownloadFile(String pathname, String localFileName) {
@@ -449,6 +446,7 @@ public class Dedup {
                 out.println("[Error] File with entered pathname is not present in the system.");
                 return;
             }
+            long start = System.currentTimeMillis();
             HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
             int totalNumberChunks = fileChunks.size();
             int spaceLeft = CONTAINER_SIZE;
@@ -465,7 +463,7 @@ public class Dedup {
             for (int i = 1; i <= totalNumberChunks; i++) {
                 String chunkHash = fileChunks.get(i);
                 Integer[] metaData = fingerPrintIndex.get(chunkHash);
-
+                
                 File file = null;
                 if (dedupStorage.equals("azure")) {
                     String myfile = currDir + "/cloudData/download/container" + metaData[0];
@@ -478,6 +476,7 @@ public class Dedup {
                 else if (dedupStorage.equals("local")) {
                     file = new File(currDir + "/data/container" + metaData[0]);
                 }
+
 
                 FileInputStream fs = new FileInputStream(file);
                 fs.skip(metaData[1]);
@@ -495,6 +494,7 @@ public class Dedup {
                 spaceLeft -= read;
                 offset += read;
                 fs.close();
+             
             }
 
             if (offset > 0) {
@@ -503,6 +503,7 @@ public class Dedup {
 
             output.close();
             out.println("File downloaded successfully");
+            out.println("File downloaded in: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
 
             if (dedupStorage.equals("azure")) {
                 File file = new File(currDir + "/cloudData/download");
@@ -526,7 +527,7 @@ public class Dedup {
                 out.println("[Error] File with entered pathname is not present in the system.");
                 return;
             }
-            
+            long startTime = System.currentTimeMillis();
             File threadFile = new File(currDir + "/temp");
             if (!threadFile.exists()) {
                 threadFile.mkdir();
@@ -557,6 +558,7 @@ public class Dedup {
             for(int i = 1; i <= numTasks; i++) {
                 File tempFile = new File(currDir + "/temp/file" + i);
                 FileInputStream fs = new FileInputStream(tempFile);
+                
                 while(true) {
                     int read = fs.read(container, 0, CONTAINER_SIZE);
                     if (read == -1) {
@@ -574,6 +576,7 @@ public class Dedup {
             }
             threadFile.delete();
             out.println("File downloaded successfully");
+            out.println("File downloaded in: " + (System.currentTimeMillis() - startTime)/1000.0 + " seconds");
 
 
         } catch(Exception e) {
@@ -587,6 +590,7 @@ public class Dedup {
                 out.println("No file with entered pathname present in the system");
                 return;
             }
+            long start = System.currentTimeMillis();
             HashMap<Integer, String> fileChunks = fileReceipt.get(pathname);
             for(Integer chunkId: fileChunks.keySet()) {
                 String chunkHash = fileChunks.get(chunkId);
@@ -619,6 +623,7 @@ public class Dedup {
             storeFingerPrintIndex();
             storeFileReceipt();
             out.println("File deleted successfully");
+            out.println("File deleted in: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -671,10 +676,8 @@ public class Dedup {
                     pathname = args[1];
                     String downloadFile = args[2];
                     dedupStorage = args[3];
-                    long start = System.currentTimeMillis();
                     //multithreadDownloadFile(pathname, downloadFile);
-                    normalDownloadFile(pathname, downloadFile);
-                    out.println("File downloaded in " + (System.currentTimeMillis() - start)/1000 + " seconds");
+                    normalDownloadFile(pathname, downloadFile); // run normal download
                     break;
 
                 case "delete":
@@ -713,13 +716,13 @@ public class Dedup {
         byte[] container;
         int containerSize;
         int containerID;
-        String storage;
+        
 
-        public ProcessContainer(byte[] container, int containerSize, int containerID, String storage) {
+        public ProcessContainer(byte[] container, int containerSize, int containerID) {
             this.container = container;
             this.containerSize = containerSize;
             this.containerID = containerID;
-            this.storage = storage;
+           
         }
 
         @Override
@@ -763,12 +766,12 @@ public class Dedup {
 
         public synchronized void incrementThread() {
             activeThreads += 1;
-            out.println(activeThreads);
+            // out.println(activeThreads);
         }
 
         public synchronized void decrementThread() {
             activeThreads -= 1;
-            out.println("Thread decrement");
+            // out.println("Thread decrement");
         }
     }
 
@@ -809,13 +812,13 @@ public class Dedup {
             }
         }
         public synchronized void incrementThread() {
+            // out.println("Thread incremented");
             activeThreads += 1;
-            out.println("Thread incremented");
         }
 
         public synchronized void decrementThread() {
+            // out.println("Thread decrement");
             activeThreads -= 1;
-            out.println("Thread decrement");
         }
     }
 

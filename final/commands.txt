@@ -1,0 +1,8 @@
+java -cp .:./lib/* MyDedup upload 4096 8192 16384 257 test.txt local
+java -cp .:./lib/* MyDedup upload 4096 8192 16384 257 test.txt azure
+
+java -cp .:./lib/* MyDedup download test.txt myfile.txt local
+java -cp .:./lib/* MyDedup download test.txt myfile.txt azure
+
+java -cp .:./lib/* MyDedup delete test.txt local
+java -cp .:./lib/* MyDedup delete test.txt azure
