@@ -5,7 +5,8 @@ import java.lang.Math;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-
+import com.microsoft.azure.storage.*;
+import com.microsoft.azure.storage.blob.*;
 
 
 public class MyDedup {
@@ -16,6 +17,7 @@ public class MyDedup {
     private static byte[] container = new byte[CONTAINER_SIZE];
     private static int containerCount, containerBytesStored;
     private static HashMap<Integer, Integer> containerStatus = new HashMap<Integer, Integer>();
+    private static HashMap<String, Boolean> containerDownloaded = new HashMap<String, Boolean>();
     private static HashMap<String, Integer[]> fingerPrintIndex = new HashMap<String, Integer[]>();
     private static HashMap<String, HashMap<Integer, String>> fileReceipt = new HashMap<String, HashMap<Integer, String>>(); 
     private static int minSize, avgSize, maxSize;
@@ -29,6 +31,18 @@ public class MyDedup {
     private static int base;
     private static String currDir;
     private static long totalNumFiles, totalNumContainers, totalNumPreDupChunks, totalNumUniqueChunks, totalPreDedupBytes, totalUniqueBytes;
+
+    private static final String storageConnectionString = "DefaultEndpointsProtocol=https;AccountName=csci4180assg3;AccountKey=srpWi4iy7CODSq3OmtQj9IJ76exrHPiTo4HQC5r9X4ZXEdu3HWCQ8GNQ2u+f3W+bpG40gU2CnUNg1TaWEA581Q==;EndpointSuffix=core.windows.net";
+    private static CloudStorageAccount storageAccount;
+    private static CloudBlobClient blobClient;
+    private static CloudBlobContainer cloudContainer;
+    static {
+        System.setProperty("https.proxyHost", "proxy.cse.cuhk.edu.hk");
+        System.setProperty("https.proxyPort", "8000");
+        System.setProperty("http.proxyHost", "proxy.cse.cuhk.edu.hk");
+        System.setProperty("http.proxyPort", "8000");
+    }
+
 
     public static void initFingerPrintIndex() {
         BufferedReader bf = null;
@@ -236,7 +250,7 @@ public class MyDedup {
                 Integer[] metaData = fingerPrintIndex.get(chunkHash);
                 metaData[3] += 1;
                 numDedupChunks += 1;
-                out.println("Chunk deduplicated");
+                // out.println("Chunk deduplicated");
             } else {
                 // if container has only 10kb left, size of chunk is 12kb
                 // test on binary file
@@ -257,7 +271,7 @@ public class MyDedup {
                     }
                     Integer[] metaData = {containerCount, startIndex, chunkSize, 1};
                     fingerPrintIndex.put(chunkHash, metaData);
-                    out.println("Chunk stored in container");
+                    // out.println("Chunk stored in container");
               
             }
             
@@ -346,8 +360,9 @@ public class MyDedup {
 
             File file = new File(pathname);
             FileInputStream fs = new FileInputStream(file);
+    
 
-            out.println(totalBytesRead);
+            // out.println(totalBytesRead);
             while(!finishChunking) {
                 chunk = new byte[maxSize];
                 read = fs.read(chunk, 0, minSize);
@@ -359,7 +374,7 @@ public class MyDedup {
 
                 if (read < minSize && read > 0) {
                     totalBytesRead += read;
-                    out.println(totalBytesRead);
+                    // out.println(totalBytesRead);
                     numChunks += 1;
                     deduplicate(chunk, read, fileChunks);
                     finishChunking = true;
@@ -369,7 +384,7 @@ public class MyDedup {
                 if (read == minSize) { 
                     int bytesRead = rfp(minSize, base, avgSize, chunk, fs);
                     totalBytesRead += bytesRead;
-                    out.println(totalBytesRead);
+                    // out.println(totalBytesRead);
                     numChunks += 1;
                     deduplicate(chunk, bytesRead, fileChunks);
                 }
@@ -393,6 +408,11 @@ public class MyDedup {
             while(activeThreads > 0) {
                 Thread.sleep(100);
             }
+
+            if (dedupStorage.equals("azure")) {
+                File uploadFile = new File(currDir + "/cloudData");
+                uploadFile.delete();
+            }
             
             
             totalNumFiles = fileReceipt.size();
@@ -412,7 +432,7 @@ public class MyDedup {
             out.println("[Error] Can't open the upload file. ");
             e.printStackTrace();
         }
-
+        out.println("Report Output:");
         out.println("Total number of files that have been stored: " + totalNumFiles);
         out.println("Total number of pre-deduplicated chunks in storage: " + totalNumPreDupChunks);
         out.println("Total number of unique chunks in storage: " + totalNumUniqueChunks);
@@ -440,10 +460,34 @@ public class MyDedup {
             int offset = 0;
             FileOutputStream output = new FileOutputStream(currDir + "/" + localFileName);
 
+            if (dedupStorage.equals("azure")) {
+                File file = new File(currDir + "/cloudData");
+                if (!file.exists()) {
+                    file.mkdir();
+                }
+            }
+
             for (int i = 1; i <= totalNumberChunks; i++) {
                 String chunkHash = fileChunks.get(i);
                 Integer[] metaData = fingerPrintIndex.get(chunkHash);
-                File file = new File(currDir + "/data/container" + metaData[0]);
+                
+                File file = null;
+                if (dedupStorage.equals("azure")) {
+                    String myfile = currDir + "/cloudData/container" + metaData[0];
+                    if (!containerDownloaded.containsKey(myfile)) {
+                    // Retrieve reference to a blob named "remoteFileName".
+                    // System.out.println("cont num: " + containerNum);
+                    CloudBlockBlob blob = cloudContainer.getBlockBlobReference("container" + metaData[0]);
+                    blob.download(new FileOutputStream(myfile));
+                    containerDownloaded.put(myfile, true);
+                    }
+                    file = new File(currDir + "/cloudData/container" + metaData[0]);
+                }
+                else if (dedupStorage.equals("local")) {
+                    file = new File(currDir + "/data/container" + metaData[0]);
+                }
+
+
                 FileInputStream fs = new FileInputStream(file);
                 fs.skip(metaData[1]);
                 if(spaceLeft < metaData[2]) {
@@ -460,6 +504,7 @@ public class MyDedup {
                 spaceLeft -= read;
                 offset += read;
                 fs.close();
+                file.delete();
              
             }
 
@@ -470,6 +515,17 @@ public class MyDedup {
             output.close();
             out.println("File downloaded successfully");
             out.println("File downloaded in: " + (System.currentTimeMillis() - start)/1000.0 + " seconds");
+
+            if (dedupStorage.equals("azure")) {
+                File file = new File(currDir + "/cloudData");
+                if (file.exists()) {
+                    File[] tempFiles = file.listFiles();
+                    for(File f: tempFiles) {
+                        f.delete();
+                    }
+                    file.delete();
+                }
+            }
 
         } catch(Exception e) {
             e.printStackTrace();
@@ -564,7 +620,12 @@ public class MyDedup {
                         file.delete();
                         containerCount -= 1;
                     } else if (dedupStorage.equals("azure")) {
-
+                        // Retrieve reference to a blob named "fileName".
+                        String path = "container" + metaData[0];
+                        CloudBlockBlob blob = cloudContainer.getBlockBlobReference(path);
+                        // Delete the blob.
+                        blob.deleteIfExists();
+                        containerCount -= 1;
                     }
                 }
             }
@@ -590,6 +651,15 @@ public class MyDedup {
             String option = args[0];
             String pathname;
             currDir = System.getProperty("user.dir");
+
+            // Retrieve storage account from connection-string.
+            storageAccount = CloudStorageAccount.parse(storageConnectionString);
+            // Create the blob client.
+            blobClient = storageAccount.createCloudBlobClient();
+            // Retrieve reference to a previously created container.
+            cloudContainer = blobClient.getContainerReference("data");
+            // Create the container if it does not exist.
+            cloudContainer.createIfNotExists();
 
             switch(option) {
                 case "upload":
@@ -681,6 +751,21 @@ public class MyDedup {
                     writer.close();
                 } else if (dedupStorage.equals("azure")) {
                     // store the container in cloud
+                    
+                    File file = new File(currDir + "/cloudData");
+                    if (!file.exists()) {
+                        file.mkdir();
+                    }
+                    FileOutputStream fos = new FileOutputStream(currDir + "/cloudData/container" + containerID);
+                    fos.write(container);
+                    fos.close();
+
+                    // Create or overwrite the remoteFileName blob with contents from a local file.
+                    CloudBlockBlob blob = cloudContainer.getBlockBlobReference("container" + containerID);
+                    File source = new File(currDir + "/cloudData/container" + containerID);
+                    blob.upload(new FileInputStream(source), source.length());
+
+                    source.delete();
                 }
                 decrementThread();
 
@@ -692,12 +777,12 @@ public class MyDedup {
 
         public synchronized void incrementThread() {
             activeThreads += 1;
-            out.println(activeThreads);
+            // out.println(activeThreads);
         }
 
         public synchronized void decrementThread() {
             activeThreads -= 1;
-            out.println("Thread decrement");
+            // out.println("Thread decrement");
         }
     }
 
@@ -738,12 +823,12 @@ public class MyDedup {
             }
         }
         public synchronized void incrementThread() {
-            out.println("Thread incremented");
+            // out.println("Thread incremented");
             activeThreads += 1;
         }
 
         public synchronized void decrementThread() {
-            out.println("Thread decrement");
+            // out.println("Thread decrement");
             activeThreads -= 1;
         }
     }
