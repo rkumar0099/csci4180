@@ -504,7 +504,7 @@ public class MyDedup {
                 spaceLeft -= read;
                 offset += read;
                 fs.close();
-                file.delete();
+                //file.delete(); this is for to delete container once we have fetch a chunk. 
              
             }
 
